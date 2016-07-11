@@ -4,20 +4,21 @@
 
 
    List of higher-level tasks:
-    1) Figure out how to perform timed tasks
-      a) Update weather forecast at 45mins
-      b) Update display at 0mins and 30mins
+  - 1) Figure out how to perform timed tasks
+  -   a) Update weather forecast at 45mins
+  -   b) Update display at 0mins and 30mins
     2) Merge NTP into weather code
       a) add way to keep trying until time RX'd first time
       b) count sequential failures and retry if failed x times in a row.
     3) Set up NTP and weather updates to reconnect to Wifi if lost
-    4) Parse hour data from weather forecast to sync DST
-    5) Figure out display cycle timing
-      a) propbably need 2 timers or one and loop
-      b) one timer for next event, need FSM
-      c) other timer for cycling LEDS, less complicated FSM
-      d) actually timers aren't necessary. We can use an FSM in loop. Less overhead, simpiler
-    6) Merge LED code in rest of code
+  - 4) Parse hour data from weather forecast to sync DST
+  - 5) Figure out display cycle timing
+  -   a) propbably need 2 timers or one and loop
+  -   b) one timer for next event, need FSM
+  -   c) other timer for cycling LEDS, less complicated FSM
+  -   d) actually timers aren't necessary. We can use an FSM in loop. Less overhead, simpiler
+    6) Merge LED code into rest of code
+    7) Add not-connected state with LED display mode
 
 */
 
@@ -102,7 +103,6 @@ void setup() {
   setSyncProvider(getNtpTime);
   setSyncInterval(300);
 
-  //  Alarm.timerRepeat(5, updateDisplay);
   /*
     while(timeStatus() == timeNotSet){
       delay(10000);
@@ -264,7 +264,7 @@ void updateDisplay() {
 }
 
 // NTP Functions from TimeNTP_ESP8266WiFi.ino ===============================================
-// Todo trim these down and ifdef print statement
+// Todo trim these down and ifdef print statements
 
 time_t getNtpTime()
 {
@@ -353,4 +353,29 @@ void displayData() {
 }
 #endif
 
+
+// Ignore this, I'll come back to it
+/*
+// returns the next int
+int getNextIntFromString(String str, int startIdx){
+  return 0;
+}
+
+int findNextDigit(String str, startIdx){
+  if(startIdx >= str.length()){
+    return -1;
+  }
+
+  for(int idx = startIdx
+  
+  char chr = str.charAt(startIdx);
+
+  do {
+    
+  } while();
+  
+  
+  return 0;
+}
+*/
 
