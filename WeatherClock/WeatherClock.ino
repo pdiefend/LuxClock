@@ -30,7 +30,7 @@
 // Definitions and constants
 #define NUM_TEMPS 36
 #define DEBUGGING
-#define Weather_DL_Minute 22
+#define Weather_DL_Minute 54
 #define LED_Cycle_Time 5 // can't be 1
 
 #define NTP_PACKET_SIZE 48
@@ -50,13 +50,17 @@ const unsigned int localPort = 8888;  // local port to listen for UDP packets
 static char respBuf[4096];
 byte packetBuffer[NTP_PACKET_SIZE];
 
-int temperatures[NUM_TEMPS];
-int pops[NUM_TEMPS];
+int temperatures[NUM_TEMPS]; // must be signed... it gets cold here sometimes
+int pops[NUM_TEMPS]; // could be reduced to bytes
+int hours[NUM_TEMPS]; // cound be reduced to bytes
 int sunrise = 0;
 int sunset = 0;
 byte tempidx = 0;
 byte popidx = 0;
+byte hoursidx = 0;
 WiFiUDP Udp;
+
+
 
 
 // Forward Declarations
@@ -110,6 +114,7 @@ void setup() {
 }
 
 
+// Scheduling flags
 byte tempFlag = 0;
 byte WeatherDataFresh = 0;
 byte LEDs_Advanced = 0;
@@ -213,6 +218,12 @@ void updateWeatherForecast() {
       pops[popidx] = line.toInt();
       //Serial.println(line);
       popidx += 1;
+    } else if (line.indexOf("hour_padded") != -1) {
+      line = line.substring(11); // TODO Find a better way to find the number I want
+      hours[hoursidx] = line.toInt();
+      //Serial.println(line);
+      hoursidx += 1;
+      
     } else if (line.indexOf("sunrise") != -1) {
       line = httpclient.readStringUntil('}');
       idx = line.indexOf("hour");
@@ -326,6 +337,13 @@ void displayData() {
     Serial.print(", ");
   }
   Serial.println(pops[NUM_TEMPS - 1]);
+
+  Serial.println("Hours: ");
+  for (int i = 0; i < (NUM_TEMPS - 1); i++) {
+    Serial.print(hours[i]);
+    Serial.print(", ");
+  }
+  Serial.println(hours[NUM_TEMPS - 1]);  
 
   Serial.print("Sunrise: ");
   Serial.println(sunrise);
