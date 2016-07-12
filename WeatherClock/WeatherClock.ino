@@ -19,7 +19,13 @@
   -   d) actually timers aren't necessary. We can use an FSM in loop. Less overhead, simpiler
     6) Merge LED code into rest of code
     7) Add not-connected state with LED display mode
+    8) Figure out color mapping for
 
+  Notes:
+  packed color is uint32_t
+  r = c[16:23]
+  g = c[8:15]
+  b = c[0:7]
 */
 
 #include <TimeLib.h>
@@ -30,9 +36,13 @@
 
 // Definitions and constants
 #define NUM_TEMPS 36
+#define NUM_LEDS 48
 #define DEBUGGING
-#define Weather_DL_Minute 54
+#define Weather_DL_Minute 56
 #define LED_Cycle_Time 5 // can't be 1
+#define DAYLIGHT_MODE 0
+#define TEMPERATURE_MODE 1
+#define POP_MODE 2
 
 #define NTP_PACKET_SIZE 48
 
@@ -61,7 +71,8 @@ byte popidx = 0;
 byte hoursidx = 0;
 WiFiUDP Udp;
 
-
+byte cycleNum = 0;
+uint32_t coloredWeather[3][48];
 
 
 // Forward Declarations
@@ -69,6 +80,9 @@ void updateWeatherForecast();
 time_t getNtpTime();
 void sendNTPpacket(IPAddress &address);
 void updateDisplay();
+int getNextIntFromString(String str, int startIdx);
+void convertWeatherToColor();
+
 
 #ifdef DEBUGGING
 void displayData();
@@ -209,23 +223,33 @@ void updateWeatherForecast() {
   while (httpclient.connected() || httpclient.available()) {
     line = httpclient.readStringUntil('\n');
     if (line.indexOf("temp") != -1) {
+      /*
       line = line.substring(23); // TODO Find a better way to find the number I want
       temperatures[tempidx] = line.toInt();
       //Serial.println(line);
+      */
+      temperatures[tempidx] = getNextIntFromString(line, line.indexOf("english"));
       tempidx += 1;
     } else if (line.indexOf("pop") != -1) {
-      line = line.substring(10); // TODO Find a better way to find the number I want
+      /*line = line.substring(10); // TODO Find a better way to find the number I want
       pops[popidx] = line.toInt();
       //Serial.println(line);
+      */
+      pops[popidx] = getNextIntFromString(line, line.indexOf("pop"));
       popidx += 1;
     } else if (line.indexOf("hour_padded") != -1) {
+      /*
       line = line.substring(11); // TODO Find a better way to find the number I want
       hours[hoursidx] = line.toInt();
       //Serial.println(line);
+      */
+      hours[hoursidx] = getNextIntFromString(line, line.indexOf("hour"));
       hoursidx += 1;
-      
+
+  
     } else if (line.indexOf("sunrise") != -1) {
       line = httpclient.readStringUntil('}');
+      /*
       idx = line.indexOf("hour");
       line = line.substring(idx + 7); // TODO Find a better way, but this is better
       sunrise = line.toInt() * 60;
@@ -233,8 +257,13 @@ void updateWeatherForecast() {
       idx = line.indexOf("minute");
       line = line.substring(idx + 9); // TODO Find a better way, but this is better
       sunrise = sunrise + line.toInt();
+      */
+      sunrise = getNextIntFromString(line, line.indexOf("hour")) * 60;
+      sunrise += getNextIntFromString(line, line.indexOf("minute"));
+      
     } else if (line.indexOf("sunset") != -1) {
       line = httpclient.readStringUntil('}');
+      /*
       idx = line.indexOf("hour");
       line = line.substring(idx + 7); // TODO Find a better way, but this is better
       sunset = line.toInt() * 60;
@@ -242,6 +271,9 @@ void updateWeatherForecast() {
       idx = line.indexOf("minute");
       line = line.substring(idx + 9); // TODO Find a better way, but this is better
       sunset = sunset + line.toInt();
+      */
+      sunset = getNextIntFromString(line, line.indexOf("hour")) * 60;
+      sunset += getNextIntFromString(line, line.indexOf("minute"));
     }
   }
 
@@ -261,6 +293,35 @@ void updateWeatherForecast() {
 
 void updateDisplay() {
   // update LED Display
+}
+
+void convertWeatherToColor(){
+  /*
+  packed color is uint32_t
+  r = c[16:23]
+  g = c[8:15]
+  b = c[0:7]
+  */
+  //uint32_t coloredWeather[3][48];
+
+  byte r,g,b = 0;
+  for(int idx = 0; idx < NUM_LEDS; idx++){
+    r = 0;
+    g = 0;
+    b = 0;
+    coloredWeather[DAYLIGHT_MODE][idx] = 0;
+    
+    r = 0;
+    g = 0;
+    b = 0;
+    coloredWeather[TEMPERATURE_MODE][idx] = 0;
+
+    r = 0;
+    g = 0;
+    b = 0;
+    coloredWeather[POP_MODE][idx] = 0; 
+  }
+  
 }
 
 // NTP Functions from TimeNTP_ESP8266WiFi.ino ===============================================
@@ -320,6 +381,24 @@ void sendNTPpacket(IPAddress &address)
   Udp.endPacket();
 }
 
+// Supporting Functions =======================================================
+
+// returns the next int
+int getNextIntFromString(String str, int startIdx){
+  if((startIdx >= str.length()) || (startIdx < 0)){
+    return -1;
+  }
+
+  char chr = 0;
+  for(int idx = startIdx; idx < str.length(); idx++){
+    chr = str.charAt(idx);
+    if(isDigit(chr)){
+      return str.substring(idx).toInt();
+    }
+  }
+  return -1;
+}
+
 // Debug Functions ========================================================
 
 #ifdef DEBUGGING
@@ -353,29 +432,4 @@ void displayData() {
 }
 #endif
 
-
-// Ignore this, I'll come back to it
-/*
-// returns the next int
-int getNextIntFromString(String str, int startIdx){
-  return 0;
-}
-
-int findNextDigit(String str, startIdx){
-  if(startIdx >= str.length()){
-    return -1;
-  }
-
-  for(int idx = startIdx
-  
-  char chr = str.charAt(startIdx);
-
-  do {
-    
-  } while();
-  
-  
-  return 0;
-}
-*/
 
