@@ -72,7 +72,7 @@ byte hoursidx = 0;
 WiFiUDP Udp;
 
 byte cycleNum = 0;
-uint32_t coloredWeather[3][48];
+uint32_t coloredWeather[3][NUM_LEDS+2];
 
 
 // Forward Declarations
@@ -154,27 +154,29 @@ void loop() {
 #ifdef DEBUGGING
     //displayData();
 #endif
-  
+
   } else if ((second() % LED_Cycle_Time) == 1) {
     tempFlag = 0;
   }
 
   // Download Weather Data
   if (minute() == Weather_DL_Minute && WeatherDataFresh == 0) {
-    updateWeatherForecast();
+    //updateWeatherForecast();
     WeatherDataFresh = 1;
-    
+
 #ifdef DEBUGGING
     displayData();
 #endif
-  
+
   } else if (minute() == (Weather_DL_Minute + 1)) {
     WeatherDataFresh = 0;
   }
 
-    // advance LEDs
+  // advance LEDs
   if (((minute() == 0) || (minute() == 30)) && LEDs_Advanced == 0) {
     LEDs_Advanced = 1;
+    advanceDisplay();
+    // advance the half hour LEDs
   } else if ((minute() == 1) || (minute() == 31)) {
     LEDs_Advanced = 0;
   }
@@ -187,9 +189,6 @@ void loop() {
       yield(); // needs to be yeild or else WDT expires
     }
   */
-
-  // Wait 5 minutes
-  //delay(300000); // this will trigger the WDT
 }
 
 // Weather Download Functions =========================================================
@@ -224,53 +223,53 @@ void updateWeatherForecast() {
     line = httpclient.readStringUntil('\n');
     if (line.indexOf("temp") != -1) {
       /*
-      line = line.substring(23); // TODO Find a better way to find the number I want
-      temperatures[tempidx] = line.toInt();
-      //Serial.println(line);
+        line = line.substring(23); // TODO Find a better way to find the number I want
+        temperatures[tempidx] = line.toInt();
+        //Serial.println(line);
       */
       temperatures[tempidx] = getNextIntFromString(line, line.indexOf("english"));
       tempidx += 1;
     } else if (line.indexOf("pop") != -1) {
       /*line = line.substring(10); // TODO Find a better way to find the number I want
-      pops[popidx] = line.toInt();
-      //Serial.println(line);
+        pops[popidx] = line.toInt();
+        //Serial.println(line);
       */
       pops[popidx] = getNextIntFromString(line, line.indexOf("pop"));
       popidx += 1;
     } else if (line.indexOf("hour_padded") != -1) {
       /*
-      line = line.substring(11); // TODO Find a better way to find the number I want
-      hours[hoursidx] = line.toInt();
-      //Serial.println(line);
+        line = line.substring(11); // TODO Find a better way to find the number I want
+        hours[hoursidx] = line.toInt();
+        //Serial.println(line);
       */
       hours[hoursidx] = getNextIntFromString(line, line.indexOf("hour"));
       hoursidx += 1;
 
-  
+
     } else if (line.indexOf("sunrise") != -1) {
       line = httpclient.readStringUntil('}');
       /*
-      idx = line.indexOf("hour");
-      line = line.substring(idx + 7); // TODO Find a better way, but this is better
-      sunrise = line.toInt() * 60;
+        idx = line.indexOf("hour");
+        line = line.substring(idx + 7); // TODO Find a better way, but this is better
+        sunrise = line.toInt() * 60;
 
-      idx = line.indexOf("minute");
-      line = line.substring(idx + 9); // TODO Find a better way, but this is better
-      sunrise = sunrise + line.toInt();
+        idx = line.indexOf("minute");
+        line = line.substring(idx + 9); // TODO Find a better way, but this is better
+        sunrise = sunrise + line.toInt();
       */
       sunrise = getNextIntFromString(line, line.indexOf("hour")) * 60;
       sunrise += getNextIntFromString(line, line.indexOf("minute"));
-      
+
     } else if (line.indexOf("sunset") != -1) {
       line = httpclient.readStringUntil('}');
       /*
-      idx = line.indexOf("hour");
-      line = line.substring(idx + 7); // TODO Find a better way, but this is better
-      sunset = line.toInt() * 60;
+        idx = line.indexOf("hour");
+        line = line.substring(idx + 7); // TODO Find a better way, but this is better
+        sunset = line.toInt() * 60;
 
-      idx = line.indexOf("minute");
-      line = line.substring(idx + 9); // TODO Find a better way, but this is better
-      sunset = sunset + line.toInt();
+        idx = line.indexOf("minute");
+        line = line.substring(idx + 9); // TODO Find a better way, but this is better
+        sunset = sunset + line.toInt();
       */
       sunset = getNextIntFromString(line, line.indexOf("hour")) * 60;
       sunset += getNextIntFromString(line, line.indexOf("minute"));
@@ -295,33 +294,71 @@ void updateDisplay() {
   // update LED Display
 }
 
-void convertWeatherToColor(){
+void advanceDisplay() {
+  // advance LED Display
+}
+
+void convertWeatherToColor() {
   /*
-  packed color is uint32_t
-  r = c[16:23]
-  g = c[8:15]
-  b = c[0:7]
+    packed color is uint32_t
+    r = c[16:23]
+    g = c[8:15]
+    b = c[0:7]
   */
-  //uint32_t coloredWeather[3][48];
+  // uint32_t coloredWeather[3][NUM_LEDS+2]; // 3x50
 
-  byte r,g,b = 0;
-  for(int idx = 0; idx < NUM_LEDS; idx++){
-    r = 0;
-    g = 0;
-    b = 0;
-    coloredWeather[DAYLIGHT_MODE][idx] = 0;
-    
-    r = 0;
-    g = 0;
-    b = 0;
-    coloredWeather[TEMPERATURE_MODE][idx] = 0;
+  byte r, g, b = 0;
+  for (int idx = 0; idx < (NUM_LEDS+2); idx++) {
+    // Daylight
+    r = 0; g = 0; b = 0;
+    int timeOfIDX = hours[idx/2] * 60;
+    if((idx % 2) == 1){
+      // bottom of the hour, add 30 minutes
+      timeOfIDX += 30;
+    }
+    if((abs(timeOfIDX - sunrise) < 16) || (abs(timeOfIDX - sunset) < 16)){
+      // first or last light
+      r = 75;
+      g = 75;
+      b = 200;
+    } else if((timeOfIDX > sunrise) && (timeOfIDX < sunset)){
+      // if daylight
+      r = 128;
+      g = 128;
+    } else {
+      // nighttime
+      b = 75;
+    }
+    coloredWeather[DAYLIGHT_MODE][idx] = (r<<16)+(g<<8)+b;
 
-    r = 0;
-    g = 0;
-    b = 0;
-    coloredWeather[POP_MODE][idx] = 0; 
+    // Temperature
+    r = 0; g = 0; b = 0;
+    byte tmp = 0; // temporary not temperature
+    if(temperatures[idx/2] <= 0){
+      r=128; g=128; b=255;
+    } else if(temperatures[idx/2] <= 30) {
+      tmp = map(temperatures[idx/2], 0, 30, 0, 128);
+      r = (128-tmp); g = (128-tmp); b = 255;
+    } else if(temperatures[idx/2] <= 60) {
+      tmp = map(temperatures[idx/2], 30, 60, 0, 255);
+      g = tmp; b = (255-tmp);
+    } else if(temperatures[idx/2] <= 90) {
+      tmp = map(temperatures[idx/2], 60, 90, 0, 255);
+      r = tmp; g = (255-tmp);
+    } else if(temperatures[idx/2] <= 105) {
+      tmp = map(temperatures[idx/2], 90, 105, 0, 128);
+      r = (255-tmp); b = tmp;
+    } else {
+      r = 128; b = 128;
+    }
+    coloredWeather[TEMPERATURE_MODE][idx] = (r<<16)+(g<<8)+b;
+
+    // Precip
+    r = 0; g = 0; b = 0;
+    b = map(pops[idx/2], 0, 100, 0, 255);
+    coloredWeather[POP_MODE][idx] = (r<<16)+(g<<8)+b;
   }
-  
+
 }
 
 // NTP Functions from TimeNTP_ESP8266WiFi.ino ===============================================
@@ -384,15 +421,15 @@ void sendNTPpacket(IPAddress &address)
 // Supporting Functions =======================================================
 
 // returns the next int
-int getNextIntFromString(String str, int startIdx){
-  if((startIdx >= str.length()) || (startIdx < 0)){
+int getNextIntFromString(String str, int startIdx) {
+  if ((startIdx >= str.length()) || (startIdx < 0)) {
     return -1;
   }
 
   char chr = 0;
-  for(int idx = startIdx; idx < str.length(); idx++){
+  for (int idx = startIdx; idx < str.length(); idx++) {
     chr = str.charAt(idx);
-    if(isDigit(chr)){
+    if (isDigit(chr)) {
       return str.substring(idx).toInt();
     }
   }
@@ -422,7 +459,7 @@ void displayData() {
     Serial.print(hours[i]);
     Serial.print(", ");
   }
-  Serial.println(hours[NUM_TEMPS - 1]);  
+  Serial.println(hours[NUM_TEMPS - 1]);
 
   Serial.print("Sunrise: ");
   Serial.println(sunrise);
