@@ -32,19 +32,33 @@
 //#include <TimeAlarms.h>
 #include <ESP8266WiFi.h>
 #include <WiFiUdp.h>
+#include <Adafruit_NeoPixel.h>
 #include "PASSWORDS.h"
 
 // Definitions and constants
 #define NUM_TEMPS 36
 #define NUM_LEDS 48
-#define DEBUGGING
 #define Weather_DL_Minute 56
 #define LED_Cycle_Time 5 // can't be 1
 #define DAYLIGHT_MODE 0
 #define TEMPERATURE_MODE 1
 #define POP_MODE 2
+#define TRANS_STEPS 45
 
 #define NTP_PACKET_SIZE 48
+
+#define WS2812_PIN 2
+
+// Forward Declarations
+void updateWeatherForecast();
+time_t getNtpTime();
+void sendNTPpacket(IPAddress &address);
+void updateDisplay();
+void advanceDisplay();
+void convertWeatherToColor();
+int getNextIntFromString(String str, int startIdx);
+void convertWeatherToColor();
+void displayData();
 
 const char request[] =
   "GET /api/" API_Key "/astronomy/hourly/q/" Zipcode ".json HTTP/1.1\r\n"
@@ -72,25 +86,26 @@ byte hoursidx = 0;
 WiFiUDP Udp;
 
 byte cycleNum = 0;
-uint32_t coloredWeather[3][NUM_LEDS+2];
+//uint32_t coloredWeather[3][NUM_LEDS+2];
+byte red[3][NUM_LEDS + 2];
+byte blue[3][NUM_LEDS + 2];
+byte green[3][NUM_LEDS + 2];
+Adafruit_NeoPixel ring = Adafruit_NeoPixel(NUM_LEDS, WS2812_PIN, NEO_GRB + NEO_KHZ800);
 
-
-// Forward Declarations
-void updateWeatherForecast();
-time_t getNtpTime();
-void sendNTPpacket(IPAddress &address);
-void updateDisplay();
-int getNextIntFromString(String str, int startIdx);
-void convertWeatherToColor();
-
-
-#ifdef DEBUGGING
-void displayData();
-#endif
+// Scheduling flags
+byte tempFlag = 0;
+byte WeatherDataFresh = 0;
+byte LEDs_Advanced = 0;
 
 
 void setup() {
   Serial.begin(115200);
+  ring.begin();
+  ring.setBrightness(25);
+  for (int i = 0; i < NUM_LEDS; i++) {
+    ring.setPixelColor(i, 0);
+  }
+  ring.show();
 
   Serial.print("Reset Timeout");
   for (int i = 0; i < 3; i++) {
@@ -104,11 +119,19 @@ void setup() {
 
   WiFi.begin(mySSID, myPASS);
 
+  int waitCounter = 0;
   while (WiFi.status() != WL_CONNECTED) {
-    delay(250);
+    ring.setPixelColor(waitCounter, ring.Color(50, 0, 0));
+    ring.show();
+    waitCounter++;
+    delay(500);
     Serial.print(F("."));
   }
 
+  for (int i = 0; i < NUM_LEDS; i++) {
+    ring.setPixelColor(i, ring.Color(0, 50, 0));
+  }
+  ring.show();
   Serial.print("Connected, My IP is: ");
   Serial.println(WiFi.localIP());
 
@@ -124,25 +147,40 @@ void setup() {
       //yield();
     }
   */
-  delay(3000);
+  delay(1000);
+  yield();
+  delay(1000);
+  yield();
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    ring.setPixelColor(i, 0);
+  }
+  ring.show();
+
+  updateWeatherForecast();
+  WeatherDataFresh = 1;
+  convertWeatherToColor();
 }
 
 
-// Scheduling flags
-byte tempFlag = 0;
-byte WeatherDataFresh = 0;
-byte LEDs_Advanced = 0;
+
 
 void loop() {
 
   // updateWeatherForecast();
-#ifdef DEBUGGING
   //displayData();
-#endif
+
+  // advance LEDs
+  if (((minute() == 0) || (minute() == 30)) && LEDs_Advanced == 0) { // 0 minutes might not be needed
+    LEDs_Advanced = 1;
+    //advanceDisplay();
+    // advance the half hour LEDs
+  } else if ((minute() == 1) || (minute() == 31)) {
+    LEDs_Advanced = 0;
+  }
 
   // cycle display modes
   if (((second() % LED_Cycle_Time) == 0) && tempFlag == 0) {
-    updateDisplay();
     Serial.printf("%02d", hour());
     Serial.print(":");
     Serial.printf("%02d", minute());
@@ -150,12 +188,10 @@ void loop() {
     Serial.printf("%02d", second());
     Serial.println();
     tempFlag = 1;
+    updateDisplay();
 
-#ifdef DEBUGGING
-    //displayData();
-#endif
 
-  } else if ((second() % LED_Cycle_Time) == 1) {
+  } else if ((second() % LED_Cycle_Time) != 0) {
     tempFlag = 0;
   }
 
@@ -163,23 +199,14 @@ void loop() {
   if (minute() == Weather_DL_Minute && WeatherDataFresh == 0) {
     //updateWeatherForecast();
     WeatherDataFresh = 1;
-
-#ifdef DEBUGGING
     displayData();
-#endif
-
   } else if (minute() == (Weather_DL_Minute + 1)) {
     WeatherDataFresh = 0;
   }
 
-  // advance LEDs
-  if (((minute() == 0) || (minute() == 30)) && LEDs_Advanced == 0) {
-    LEDs_Advanced = 1;
-    advanceDisplay();
-    // advance the half hour LEDs
-  } else if ((minute() == 1) || (minute() == 31)) {
-    LEDs_Advanced = 0;
-  }
+  
+
+
 
 
   /*
@@ -196,9 +223,7 @@ void loop() {
 void updateWeatherForecast() {
   // TODO check if wifi is still connected
 
-#ifdef DEBUGGING
   Serial.println("Downloading Forecast");
-#endif
 
   // Open socket
   WiFiClient httpclient;
@@ -222,55 +247,20 @@ void updateWeatherForecast() {
   while (httpclient.connected() || httpclient.available()) {
     line = httpclient.readStringUntil('\n');
     if (line.indexOf("temp") != -1) {
-      /*
-        line = line.substring(23); // TODO Find a better way to find the number I want
-        temperatures[tempidx] = line.toInt();
-        //Serial.println(line);
-      */
       temperatures[tempidx] = getNextIntFromString(line, line.indexOf("english"));
       tempidx += 1;
     } else if (line.indexOf("pop") != -1) {
-      /*line = line.substring(10); // TODO Find a better way to find the number I want
-        pops[popidx] = line.toInt();
-        //Serial.println(line);
-      */
       pops[popidx] = getNextIntFromString(line, line.indexOf("pop"));
       popidx += 1;
     } else if (line.indexOf("hour_padded") != -1) {
-      /*
-        line = line.substring(11); // TODO Find a better way to find the number I want
-        hours[hoursidx] = line.toInt();
-        //Serial.println(line);
-      */
       hours[hoursidx] = getNextIntFromString(line, line.indexOf("hour"));
       hoursidx += 1;
-
-
     } else if (line.indexOf("sunrise") != -1) {
       line = httpclient.readStringUntil('}');
-      /*
-        idx = line.indexOf("hour");
-        line = line.substring(idx + 7); // TODO Find a better way, but this is better
-        sunrise = line.toInt() * 60;
-
-        idx = line.indexOf("minute");
-        line = line.substring(idx + 9); // TODO Find a better way, but this is better
-        sunrise = sunrise + line.toInt();
-      */
       sunrise = getNextIntFromString(line, line.indexOf("hour")) * 60;
       sunrise += getNextIntFromString(line, line.indexOf("minute"));
-
     } else if (line.indexOf("sunset") != -1) {
       line = httpclient.readStringUntil('}');
-      /*
-        idx = line.indexOf("hour");
-        line = line.substring(idx + 7); // TODO Find a better way, but this is better
-        sunset = line.toInt() * 60;
-
-        idx = line.indexOf("minute");
-        line = line.substring(idx + 9); // TODO Find a better way, but this is better
-        sunset = sunset + line.toInt();
-      */
       sunset = getNextIntFromString(line, line.indexOf("hour")) * 60;
       sunset += getNextIntFromString(line, line.indexOf("minute"));
     }
@@ -280,10 +270,8 @@ void updateWeatherForecast() {
   popidx = 0;
   line = "";
 
-#ifdef DEBUGGING
   Serial.println();
   Serial.println("Closing connection\n");
-#endif
 
   httpclient.stop();
 }
@@ -292,10 +280,68 @@ void updateWeatherForecast() {
 
 void updateDisplay() {
   // update LED Display
+  int nextCycleNum = (cycleNum + 1) % 3;
+
+
+  //int nextCycleNum = (cycleNum+1) % 3;
+  //byte rOld,gOld,bOld = 0;
+  //byte rNew,gNew,bNew = 0;
+  //int rStep, gStep, bStep = 0;
+  int r, g, b = 0;
+
+  for (int jdx = 1; jdx <= TRANS_STEPS; jdx++) {
+    // 0 -> NUM_LEDS
+    // for each LED calculate the step increment to the next pixel
+    for (int idx = 0; idx < NUM_LEDS; idx++) {
+      float rStep = (red[nextCycleNum][idx] - red[cycleNum][idx]);
+      rStep = rStep * (float)jdx / (float)TRANS_STEPS;
+
+      float gStep = (green[nextCycleNum][idx] - green[cycleNum][idx]);
+      gStep = gStep * (float)jdx / (float)TRANS_STEPS;
+
+      float bStep = (blue[nextCycleNum][idx] - blue[cycleNum][idx]);
+      bStep = bStep * (float)jdx / (float)TRANS_STEPS;
+
+      r = red[cycleNum][idx] + (int)rStep;
+      g = green[cycleNum][idx] + (int)gStep;
+      b = blue[cycleNum][idx] + (int)bStep;
+
+      ring.setPixelColor(idx, ring.Color(r, g, b));
+    }
+
+    ring.show();
+
+    delay(1500.0 / TRANS_STEPS);
+    yield();
+  }
+
+  cycleNum = nextCycleNum;
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    ring.setPixelColor(i, ring.Color(red[cycleNum][i], green[cycleNum][i], blue[cycleNum][i]));
+  }
+  ring.show();
 }
 
 void advanceDisplay() {
-  // advance LED Display
+  // advance LED Display 1/2 hour
+  for (int idx = 0; idx < (NUM_LEDS + 1); idx++) {
+    //coloredWeather[0][idx] = coloredWeather[0][idx + 1];
+    //coloredWeather[1][idx] = coloredWeather[1][idx + 1];
+    //coloredWeather[2][idx] = coloredWeather[2][idx + 1];
+
+    red[DAYLIGHT_MODE][idx] = red[DAYLIGHT_MODE][idx+1];
+    green[DAYLIGHT_MODE][idx] = green[DAYLIGHT_MODE][idx+1];
+    blue[DAYLIGHT_MODE][idx] = blue[DAYLIGHT_MODE][idx+1];
+
+    red[TEMPERATURE_MODE][idx] = red[TEMPERATURE_MODE][idx+1];
+    green[TEMPERATURE_MODE][idx] = green[TEMPERATURE_MODE][idx+1];
+    blue[TEMPERATURE_MODE][idx] = blue[TEMPERATURE_MODE][idx+1];
+
+    red[POP_MODE][idx] = red[POP_MODE][idx+1];
+    green[POP_MODE][idx] = green[POP_MODE][idx+1];
+    blue[POP_MODE][idx] = blue[POP_MODE][idx+1];
+  }
 }
 
 void convertWeatherToColor() {
@@ -307,56 +353,70 @@ void convertWeatherToColor() {
   */
   // uint32_t coloredWeather[3][NUM_LEDS+2]; // 3x50
 
-  byte r, g, b = 0;
-  for (int idx = 0; idx < (NUM_LEDS+2); idx++) {
+  //byte r, g, b = 0;
+  for (int idx = 0; idx < (NUM_LEDS + 2); idx++) {
     // Daylight
-    r = 0; g = 0; b = 0;
-    int timeOfIDX = hours[idx/2] * 60;
-    if((idx % 2) == 1){
+    //r = 0; g = 0; b = 0;
+    int timeOfIDX = hours[idx / 2] * 60;
+    if ((idx % 2) == 1) {
       // bottom of the hour, add 30 minutes
       timeOfIDX += 30;
     }
-    if((abs(timeOfIDX - sunrise) < 16) || (abs(timeOfIDX - sunset) < 16)){
+    if ((abs(timeOfIDX - sunrise) < 16) || (abs(timeOfIDX - sunset) < 16)) {
       // first or last light
-      r = 75;
-      g = 75;
-      b = 200;
-    } else if((timeOfIDX > sunrise) && (timeOfIDX < sunset)){
+      red[DAYLIGHT_MODE][idx] = 75;
+      green[DAYLIGHT_MODE][idx] = 75;
+      blue[DAYLIGHT_MODE][idx] = 200;
+    } else if ((timeOfIDX > sunrise) && (timeOfIDX < sunset)) {
       // if daylight
-      r = 128;
-      g = 128;
+      red[DAYLIGHT_MODE][idx] = 128;
+      green[DAYLIGHT_MODE][idx] = 128;
     } else {
       // nighttime
-      b = 75;
+      blue[DAYLIGHT_MODE][idx] = 75;
     }
-    coloredWeather[DAYLIGHT_MODE][idx] = (r<<16)+(g<<8)+b;
+    //coloredWeather[DAYLIGHT_MODE][idx] = (r<<16)+(g<<8)+b;
 
     // Temperature
-    r = 0; g = 0; b = 0;
+    //r = 0; g = 0; b = 0;
     byte tmp = 0; // temporary not temperature
-    if(temperatures[idx/2] <= 0){
-      r=128; g=128; b=255;
-    } else if(temperatures[idx/2] <= 30) {
-      tmp = map(temperatures[idx/2], 0, 30, 0, 128);
-      r = (128-tmp); g = (128-tmp); b = 255;
-    } else if(temperatures[idx/2] <= 60) {
-      tmp = map(temperatures[idx/2], 30, 60, 0, 255);
-      g = tmp; b = (255-tmp);
-    } else if(temperatures[idx/2] <= 90) {
-      tmp = map(temperatures[idx/2], 60, 90, 0, 255);
-      r = tmp; g = (255-tmp);
-    } else if(temperatures[idx/2] <= 105) {
-      tmp = map(temperatures[idx/2], 90, 105, 0, 128);
-      r = (255-tmp); b = tmp;
+    if (temperatures[idx / 2] <= 0) {
+      red[TEMPERATURE_MODE][idx] = 128;
+      green[TEMPERATURE_MODE][idx] = 128;
+      blue[TEMPERATURE_MODE][idx] = 255;
+    } else if (temperatures[idx / 2] <= 30) {
+      tmp = map(temperatures[idx / 2], 0, 30, 0, 128);
+      red[TEMPERATURE_MODE][idx] = (128 - tmp);
+      green[TEMPERATURE_MODE][idx] = (128 - tmp);
+      blue[TEMPERATURE_MODE][idx] = 255;
+    } else if (temperatures[idx / 2] <= 60) {
+      tmp = map(temperatures[idx / 2], 30, 60, 0, 255);
+      red[TEMPERATURE_MODE][idx] = 0;
+      green[TEMPERATURE_MODE][idx] = tmp;
+      blue[TEMPERATURE_MODE][idx] = (255 - tmp);
+    } else if (temperatures[idx / 2] <= 90) {
+      tmp = map(temperatures[idx / 2], 60, 90, 0, 255);
+      red[TEMPERATURE_MODE][idx] = tmp;
+      green[TEMPERATURE_MODE][idx] = (255 - tmp);
+      blue[TEMPERATURE_MODE][idx] = 0;
+    } else if (temperatures[idx / 2] <= 105) {
+      tmp = map(temperatures[idx / 2], 90, 105, 0, 128);
+      red[TEMPERATURE_MODE][idx] = (255 - tmp);
+      green[TEMPERATURE_MODE][idx] = 0;
+      blue[TEMPERATURE_MODE][idx] = tmp;
     } else {
-      r = 128; b = 128;
+      red[TEMPERATURE_MODE][idx] = 128;
+      green[TEMPERATURE_MODE][idx] = 0;
+      blue[TEMPERATURE_MODE][idx] = 128;
     }
-    coloredWeather[TEMPERATURE_MODE][idx] = (r<<16)+(g<<8)+b;
+    //coloredWeather[TEMPERATURE_MODE][idx] = (r<<16)+(g<<8)+b;
 
     // Precip
-    r = 0; g = 0; b = 0;
-    b = map(pops[idx/2], 0, 100, 0, 255);
-    coloredWeather[POP_MODE][idx] = (r<<16)+(g<<8)+b;
+    //r = 0; g = 0; b = 0;
+    red[POP_MODE][idx] = 0;
+    green[POP_MODE][idx] = 0;
+    blue[POP_MODE][idx] = map(pops[idx / 2], 0, 100, 0, 255);
+    //coloredWeather[POP_MODE][idx] = (r<<16)+(g<<8)+b;
   }
 
 }
@@ -438,7 +498,6 @@ int getNextIntFromString(String str, int startIdx) {
 
 // Debug Functions ========================================================
 
-#ifdef DEBUGGING
 void displayData() {
   Serial.println("Temperatures: ");
   for (int i = 0; i < (NUM_TEMPS - 1); i++) {
@@ -467,6 +526,6 @@ void displayData() {
   Serial.print("Sunset: ");
   Serial.println(sunset);
 }
-#endif
+
 
 

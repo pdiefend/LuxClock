@@ -95,28 +95,6 @@ void loop() {
       r = red[cycleNum][idx] + (int)rStep;
       g = green[cycleNum][idx] + (int)gStep;
       b = blue[cycleNum][idx] + (int)bStep;
-  
-      //((coloredWeather[nextCycleNum][idx] & (0xff0000))>>16) - ((coloredWeather[cycleNum][idx] & (0xff0000))>>16);
-      //uint32_t rOld = ((coloredWeather[cycleNum][idx] & (0xff0000))>>16);
-      //rNew = (byte)(coloredWeather[nextCycleNum][idx] & (0xff0000))>>16;
-      //rStep = (rNew - rOld) / TRANS_STEPS;
-  
-      //uint32_t gOld = ((coloredWeather[cycleNum][idx] & (0x00ff00))>>8);
-      //gNew = (byte)(coloredWeather[nextCycleNum][idx] & (0x00ff00))>>8;
-      //gStep = (gNew - gOld) / TRANS_STEPS;
-  
-      //uint32_t bOld = ((coloredWeather[cycleNum][idx] & (0x0000ff)));
-      //bNew = (byte)(coloredWeather[nextCycleNum][idx] & (0x000ff));
-      //bStep = (bNew - bOld) / TRANS_STEPS;
-
-      //float gStep = ((coloredWeather[nextCycleNum][idx] & (0x00ff00))>>8) - ((coloredWeather[cycleNum][idx] & (0x00ff00))>>8);
-      //gStep /= TRANS_STEPS;
-      //float bStep = ((coloredWeather[nextCycleNum][idx] & (0x0000ff))) - ((coloredWeather[cycleNum][idx] & (0x0000ff)));
-      //bStep /= TRANS_STEPS;
-    
-      //r = (int)(rOld + (rStep*jdx));
-      //g = (int)(gOld + (gStep*jdx));
-      //b = (int)(bOld + (bStep*jdx));
 
       pixels.setPixelColor(idx, pixels.Color(r,g,b));
     }
@@ -145,7 +123,7 @@ cycleNum = nextCycleNum;
       pixels.setPixelColor(i, pixels.Color(red[cycleNum][i], green[cycleNum][i], blue[cycleNum][i]));
       
     }
-    pixels.show(); // This sends the updated pixel color to the hardware.
+    pixels.show();
     delay(1000);
     yield();
     delay(1000);
