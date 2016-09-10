@@ -38,7 +38,7 @@ byte red[3][NUM_LEDS+2];
 byte blue[3][NUM_LEDS+2];
 byte green[3][NUM_LEDS+2];
 
-Adafruit_NeoPixel pixels = Adafruit_NeoPixel(60, PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel ring = Adafruit_NeoPixel(60, PIN, NEO_GRB + NEO_KHZ800);
 
 void setup() {
   Serial.begin(115200);
@@ -49,17 +49,17 @@ void setup() {
     delay(1000);
   }
 
-  pixels.begin();
-  pixels.setBrightness(50);
+  ring.begin();
+  ring.setBrightness(50);
 
   // zero out my 1m (60 pixel) test strip
 for(int i=0;i<60;i++){
       
-      // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
-      pixels.setPixelColor(i, 0);
+      // ring.Color takes RGB values, from 0,0,0 up to 255,255,255
+      ring.setPixelColor(i, 0);
       
     }
-    pixels.show();
+    ring.show();
   
   convertWeatherToColor();
 }
@@ -70,67 +70,81 @@ void loop() {
   // put your main code here, to run repeatedly:
   //for(int j=0; j<3; j++){
 
-  int nextCycleNum = (cycleNum+1) % 3;
+  static unsigned long lastStep = millis();
+  static unsigned long lastTransistion = millis();
+  static byte transisitonFlag = 0;
+  unsigned long thisTick = millis();
+
+  if ((thisTick - lastTransistion) > 4500) {
+    transisitonFlag = 0;
+    lastTransistion = thisTick;
+  } else if((thisTick - lastTransistion) > 3000){
+    transisitonFlag = 1;
+  }
+
+  if(((thisTick-lastStep) > (1500/TRANS_STEPS)) && transisitonFlag) {
+    updateDisplay();
+    lastStep = thisTick;
+  }
   
-  
-    //int nextCycleNum = (cycleNum+1) % 3;
-    //byte rOld,gOld,bOld = 0;
-    //byte rNew,gNew,bNew = 0;
-    //int rStep, gStep, bStep = 0;
-    int r,g,b = 0; 
-    
-  for(int jdx = 1; jdx <= TRANS_STEPS; jdx++){   
+ //delay(1500.0/TRANS_STEPS);
+    //delay(1000);
+    //yield();
+    //delay(1000);
+    //yield();
+    //delay(1000);
+    //yield();
+    //delay(1000);
+}
+
+void updateDisplay() {
+  // update LED Display
+  static int nextCycleNum = 0;
+  static int stepNum = 0;
+
+nextCycleNum = (cycleNum + 1) % 3;
+
+  //int nextCycleNum = (cycleNum+1) % 3;
+  //byte rOld,gOld,bOld = 0;
+  //byte rNew,gNew,bNew = 0;
+  //int rStep, gStep, bStep = 0;
+  int r, g, b = 0;
+if(stepNum < TRANS_STEPS){
+  //for (int jdx = 1; jdx <= TRANS_STEPS; jdx++) {
     // 0 -> NUM_LEDS
     // for each LED calculate the step increment to the next pixel
-    for(int idx = 0; idx < NUM_LEDS; idx++) {
+    for (int idx = 0; idx < NUM_LEDS; idx++) {
       float rStep = (red[nextCycleNum][idx] - red[cycleNum][idx]);
-      rStep = rStep * (float)jdx / (float)TRANS_STEPS;
+      rStep = rStep * (float)stepNum / (float)TRANS_STEPS;
 
       float gStep = (green[nextCycleNum][idx] - green[cycleNum][idx]);
-      gStep = gStep * (float)jdx / (float)TRANS_STEPS;
+      gStep = gStep * (float)stepNum / (float)TRANS_STEPS;
 
       float bStep = (blue[nextCycleNum][idx] - blue[cycleNum][idx]);
-      bStep = bStep * (float)jdx / (float)TRANS_STEPS;
+      bStep = bStep * (float)stepNum / (float)TRANS_STEPS;
 
       r = red[cycleNum][idx] + (int)rStep;
       g = green[cycleNum][idx] + (int)gStep;
       b = blue[cycleNum][idx] + (int)bStep;
 
-      pixels.setPixelColor(idx, pixels.Color(r,g,b));
+      ring.setPixelColor(idx, ring.Color(r, g, b));
     }
-  
-    pixels.show();
-    
-    delay(1500.0/TRANS_STEPS);
-    yield();
-  }  
-  
-cycleNum = nextCycleNum;
 
-  
-    
-    if(cycleNum == DAYLIGHT_MODE){
-      Serial.println("Daylight");
-    } else if (cycleNum== TEMPERATURE_MODE){
-      Serial.println("Temperature");
-    } else if (cycleNum== POP_MODE){
-      Serial.println("Precip");
-    }
-      
-    for(int i=0;i<NUM_LEDS;i++){
-      
-      // pixels.Color takes RGB values, from 0,0,0 up to 255,255,255
-      pixels.setPixelColor(i, pixels.Color(red[cycleNum][i], green[cycleNum][i], blue[cycleNum][i]));
-      
-    }
-    pixels.show();
-    delay(1000);
-    yield();
-    delay(1000);
-    yield();
-    delay(1000);
-    yield();
-    delay(1000);
+    ring.show();
+    stepNum ++;
+}
+    //delay(1500.0 / TRANS_STEPS);
+    //yield();
+  //}
+else {
+  cycleNum = nextCycleNum;
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    ring.setPixelColor(i, ring.Color(red[cycleNum][i], green[cycleNum][i], blue[cycleNum][i]));
+  }
+  ring.show();
+  stepNum = 0;
+}
 }
 
 void convertWeatherToColor() {
@@ -209,3 +223,52 @@ void convertWeatherToColor() {
   }
 
 }
+
+/*
+
+void updateDisplay() {
+  // update LED Display
+  int nextCycleNum = (cycleNum + 1) % 3;
+
+
+  //int nextCycleNum = (cycleNum+1) % 3;
+  //byte rOld,gOld,bOld = 0;
+  //byte rNew,gNew,bNew = 0;
+  //int rStep, gStep, bStep = 0;
+  int r, g, b = 0;
+
+  for (int jdx = 1; jdx <= TRANS_STEPS; jdx++) {
+    // 0 -> NUM_LEDS
+    // for each LED calculate the step increment to the next pixel
+    for (int idx = 0; idx < NUM_LEDS; idx++) {
+      float rStep = (red[nextCycleNum][idx] - red[cycleNum][idx]);
+      rStep = rStep * (float)jdx / (float)TRANS_STEPS;
+
+      float gStep = (green[nextCycleNum][idx] - green[cycleNum][idx]);
+      gStep = gStep * (float)jdx / (float)TRANS_STEPS;
+
+      float bStep = (blue[nextCycleNum][idx] - blue[cycleNum][idx]);
+      bStep = bStep * (float)jdx / (float)TRANS_STEPS;
+
+      r = red[cycleNum][idx] + (int)rStep;
+      g = green[cycleNum][idx] + (int)gStep;
+      b = blue[cycleNum][idx] + (int)bStep;
+
+      ring.setPixelColor(idx, ring.Color(r, g, b));
+    }
+
+    ring.show();
+
+    delay(1500.0 / TRANS_STEPS);
+    yield();
+  }
+
+  cycleNum = nextCycleNum;
+
+  for (int i = 0; i < NUM_LEDS; i++) {
+    ring.setPixelColor(i, ring.Color(red[cycleNum][i], green[cycleNum][i], blue[cycleNum][i]));
+  }
+  ring.show();
+}
+
+ */

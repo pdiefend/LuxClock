@@ -4,28 +4,12 @@
 
 
    List of higher-level tasks:
-  - 1) Figure out how to perform timed tasks
-  -   a) Update weather forecast at 45mins
-  -   b) Update display at 0mins and 30mins
-    2) Merge NTP into weather code
+    1) Merge NTP into weather code
       a) add way to keep trying until time RX'd first time
       b) count sequential failures and retry if failed x times in a row.
-    3) Set up NTP and weather updates to reconnect to Wifi if lost
-  - 4) Parse hour data from weather forecast to sync DST
-  - 5) Figure out display cycle timing
-  -   a) propbably need 2 timers or one and loop
-  -   b) one timer for next event, need FSM
-  -   c) other timer for cycling LEDS, less complicated FSM
-  -   d) actually timers aren't necessary. We can use an FSM in loop. Less overhead, simpiler
-    6) Merge LED code into rest of code
-    7) Add not-connected state with LED display mode
-    8) Figure out color mapping for
+    2) Set up NTP and weather updates to reconnect to Wifi if lost
+    3) Add not-connected state with LED display mode
 
-  Notes:
-  packed color is uint32_t
-  r = c[16:23]
-  g = c[8:15]
-  b = c[0:7]
 */
 
 #include <TimeLib.h>
@@ -96,6 +80,7 @@ Adafruit_NeoPixel ring = Adafruit_NeoPixel(NUM_LEDS, WS2812_PIN, NEO_GRB + NEO_K
 byte tempFlag = 0;
 byte WeatherDataFresh = 0;
 byte LEDs_Advanced = 0;
+byte colorsUpdated = 0;
 
 
 void setup() {
@@ -149,8 +134,6 @@ void setup() {
   */
   delay(1000);
   yield();
-  delay(1000);
-  yield();
 
   for (int i = 0; i < NUM_LEDS; i++) {
     ring.setPixelColor(i, 0);
@@ -158,8 +141,10 @@ void setup() {
   ring.show();
 
   updateWeatherForecast();
+  displayData();
   WeatherDataFresh = 1;
   convertWeatherToColor();
+  //colorsUpdated = 1;
 }
 
 
@@ -171,12 +156,19 @@ void loop() {
   //displayData();
 
   // advance LEDs
-  if (((minute() == 0) || (minute() == 30)) && LEDs_Advanced == 0) { // 0 minutes might not be needed
+if((minute() == 0) && (colorsUpdated == 0)){
+  convertWeatherToColor(); // this will update the colors for the current hour
+  colorsUpdated == 1;
+}
+
+  
+  if ((minute() == 30) && LEDs_Advanced == 0) { // 0 minutes might not be needed
     LEDs_Advanced = 1;
-    //advanceDisplay();
+    advanceDisplay();
     // advance the half hour LEDs
   } else if ((minute() == 1) || (minute() == 31)) {
     LEDs_Advanced = 0;
+    colorsUpdated = 0;
   }
 
   // cycle display modes
@@ -189,25 +181,19 @@ void loop() {
     Serial.println();
     tempFlag = 1;
     updateDisplay();
-
-
   } else if ((second() % LED_Cycle_Time) != 0) {
     tempFlag = 0;
   }
 
   // Download Weather Data
   if (minute() == Weather_DL_Minute && WeatherDataFresh == 0) {
-    //updateWeatherForecast();
+    updateWeatherForecast();
+    //convertWeatherToColor(); do at minute ==0
     WeatherDataFresh = 1;
     displayData();
-  } else if (minute() == (Weather_DL_Minute + 1)) {
+  } else if (minute() != Weather_DL_Minute) {
     WeatherDataFresh = 0;
   }
-
-  
-
-
-
 
   /*
     Serial.println("\nEnd");
@@ -223,24 +209,50 @@ void loop() {
 void updateWeatherForecast() {
   // TODO check if wifi is still connected
 
+for (int i = 0; i < NUM_LEDS; i++) {
+    ring.setPixelColor(i, 0);
+  }
+
   Serial.println("Downloading Forecast");
+  //Serial.println(millis());
+
+  for (int i = 0; i < (NUM_LEDS / 4); i++) {
+    ring.setPixelColor(i, ring.Color(0, 0, 50));
+  }
+  ring.show();
 
   // Open socket
   WiFiClient httpclient;
   if (!httpclient.connect("api.wunderground.com", 80)) {
     Serial.println("[Weather download]: connection failed");
-    while (1);
+
+    for (int i = 0; i < (NUM_LEDS / 2); i++) {
+      ring.setPixelColor(i, ring.Color(50, 0, 0));
+    }
+    ring.show();
+
+    while (1) {
+      yield();
+    }
     return;
     // TODO fail more gracefully and recover
   }
+
+  for (int i = 0; i < (NUM_LEDS / 2); i++) {
+    ring.setPixelColor(i, ring.Color(0, 0, 50));
+  }
+  ring.show();
+  //Serial.println(millis());
 
   //Serial.print(request);
   httpclient.print(request);
   httpclient.flush();
 
-  // TODO get cloud cover (sky)?, others?
-  // How should I display these. I don't want more than 3 cycles
-  // maybe find a way to show cloud cover and sunrise/sunset in same cycle
+  for (int i = 0; i < (3 * NUM_LEDS / 4); i++) {
+    ring.setPixelColor(i, ring.Color(0, 0, 50));
+  }
+  ring.show();
+  //Serial.println(millis());
 
   String line = "";
   int idx = 0;
@@ -269,6 +281,11 @@ void updateWeatherForecast() {
   tempidx = 0;
   popidx = 0;
   line = "";
+
+  for (int i = 0; i < (NUM_LEDS); i++) {
+    ring.setPixelColor(i, ring.Color(0, 50, 0));
+  }
+  ring.show();
 
   Serial.println();
   Serial.println("Closing connection\n");
@@ -330,17 +347,17 @@ void advanceDisplay() {
     //coloredWeather[1][idx] = coloredWeather[1][idx + 1];
     //coloredWeather[2][idx] = coloredWeather[2][idx + 1];
 
-    red[DAYLIGHT_MODE][idx] = red[DAYLIGHT_MODE][idx+1];
-    green[DAYLIGHT_MODE][idx] = green[DAYLIGHT_MODE][idx+1];
-    blue[DAYLIGHT_MODE][idx] = blue[DAYLIGHT_MODE][idx+1];
+    red[DAYLIGHT_MODE][idx] = red[DAYLIGHT_MODE][idx + 1];
+    green[DAYLIGHT_MODE][idx] = green[DAYLIGHT_MODE][idx + 1];
+    blue[DAYLIGHT_MODE][idx] = blue[DAYLIGHT_MODE][idx + 1];
 
-    red[TEMPERATURE_MODE][idx] = red[TEMPERATURE_MODE][idx+1];
-    green[TEMPERATURE_MODE][idx] = green[TEMPERATURE_MODE][idx+1];
-    blue[TEMPERATURE_MODE][idx] = blue[TEMPERATURE_MODE][idx+1];
+    red[TEMPERATURE_MODE][idx] = red[TEMPERATURE_MODE][idx + 1];
+    green[TEMPERATURE_MODE][idx] = green[TEMPERATURE_MODE][idx + 1];
+    blue[TEMPERATURE_MODE][idx] = blue[TEMPERATURE_MODE][idx + 1];
 
-    red[POP_MODE][idx] = red[POP_MODE][idx+1];
-    green[POP_MODE][idx] = green[POP_MODE][idx+1];
-    blue[POP_MODE][idx] = blue[POP_MODE][idx+1];
+    red[POP_MODE][idx] = red[POP_MODE][idx + 1];
+    green[POP_MODE][idx] = green[POP_MODE][idx + 1];
+    blue[POP_MODE][idx] = blue[POP_MODE][idx + 1];
   }
 }
 
@@ -426,6 +443,7 @@ void convertWeatherToColor() {
 
 time_t getNtpTime()
 {
+  for(int i = 0; i < 3; i ++){
   IPAddress ntpServerIP; // NTP server's ip address
 
   while (Udp.parsePacket() > 0) ; // discard any previously received packets
@@ -450,6 +468,7 @@ time_t getNtpTime()
       secsSince1900 |= (unsigned long)packetBuffer[43];
       return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
     }
+  }
   }
   Serial.println("No NTP Response :-(");
   return 0; // return 0 if unable to get the time
